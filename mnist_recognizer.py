@@ -10,6 +10,7 @@ Original file is located at
 from __future__ import absolute_import, division, print_function
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.python.framework import ops
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -37,22 +38,48 @@ dev_labels = dev_labels.reshape(dev_labels.shape[0], -1).T
 n_x = 784 # 28 x 28 = 784 - size of single input 
 n_y = 10 #no. of classes
 
-X = tf_placeholder(tf.float32, [n_x, None], name = "X")
-Y = tf_placeholder(tf.float32, [n_y, None], name = "Y")
-
-#He / MRSA initialization
-W1 = tf.get_variable("W1", [25, 12288], initializer = tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32))
-b1 = tf.get_variable("b1", [25, 1], initializer = tf.zeros_initializer())
-W2 = tf.get_variable("W2", [12, 25], initializer = tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32))
-b2 = tf.get_variable("b2", [12, 1], initializer = tf.zeros_initializer())
-W3 = tf.get_variable("W3", [6, 12], initializer = tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32))
-b3 = tf.get_variable("b3", [6, 1], initializer = tf.zeros_initializer())
-
-def forwardProp():
+def forwardProp(W1,W2,W3,b1,b2,b3,X):
   Z1 = tf.matmul(W1, X) + b1
   A1 = tf.nn.relu(Z1)
   Z2 = tf.matmul(W2, A1) + b2
   A2 = tf.nn.relu(Z2)
   Z3 = tf.matmul(W3, A2) + b3
   return Z3
+
+def model(X_t, Y_t, X_d, Y_d, l_r, epochs, mbatch_size):
+  ops.reset_default_graph()
+  
+  X = tf.placeholder(tf.float32, [n_x, None], name = "X")
+  Y = tf.placeholder(tf.float32, [n_y, None], name = "Y")
+  
+  Y = tf.one_hot(indices = Y_t, depth = n_y, axis = 0)
+  
+  m = X_t.shape[1]
+  #He / MRSA initialization
+  W1 = tf.get_variable("W1", [25, 784], initializer = tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32))
+  b1 = tf.get_variable("b1", [25, 1], initializer = tf.zeros_initializer())
+  W2 = tf.get_variable("W2", [12, 25], initializer = tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32))
+  b2 = tf.get_variable("b2", [12, 1], initializer = tf.zeros_initializer())
+  W3 = tf.get_variable("W3", [6, 12], initializer = tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32))
+  b3 = tf.get_variable("b3", [6, 1], initializer = tf.zeros_initializer())
+  
+  Z3 = forwardProp(W1,W2,W3,b1,b2,b3,X)
+  
+  cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits = tf.transpose(Z3), labels = tf.transpose(Y)))
+  
+  optimizer = tf.train.AdamOptimizer(learning_rate = l_r).minimize(cost)
+  
+  init = tf.global_variables_initializer()
+  
+  with tf.Session() as sess:
+    sess.run(init)
+    sess.run(Y)
+    
+    for epoch in range(epochs):
+      epoch_cost = 0
+      #num_minibatches = int(m/mbatch_size)
+      
+      epoch_cost = sess.run([optimizer, cost], feed_dict={X: X_t, Y: Y_t})
+
+model(training_img, training_labels, dev_img, dev_labels, .001, 250, 100)
 
