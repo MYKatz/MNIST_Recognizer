@@ -28,8 +28,6 @@ disp_step = 2
 training_img = training_img / 255
 dev_img = dev_img / 255
 
-print(training_labels)
-
 training_img = training_img.reshape(training_img.shape[0], -1).T
 training_labels = training_labels.reshape(training_labels.shape[0], -1).T
 dev_img = dev_img.reshape(dev_img.shape[0], -1).T
@@ -38,34 +36,62 @@ dev_labels = dev_labels.reshape(dev_labels.shape[0], -1).T
 n_x = 784 # 28 x 28 = 784 - size of single input 
 n_y = 10 #no. of classes
 
-def forwardProp(W1,W2,W3,b1,b2,b3,X):
-  Z1 = tf.matmul(W1, X) + b1
+def forwardProp(X, params):
+  W1 = params["W1"]
+  b1 = params["b1"]
+  W2 = params["W2"]
+  b2 = params["b2"]
+  W3 = params["W3"]
+  b3 = params["b3"]
+  
+  
+  Z1 = tf.add(tf.matmul(W1, X), b1)
   A1 = tf.nn.relu(Z1)
-  Z2 = tf.matmul(W2, A1) + b2
+  Z2 = tf.add(tf.matmul(W2, A1), b2)
   A2 = tf.nn.relu(Z2)
-  Z3 = tf.matmul(W3, A2) + b3
+  Z3 = tf.add(tf.matmul(W3, A2), b3)
   return Z3
+
+def initializeParams():
+  #He / MRSA initialization
+  W1 = tf.get_variable("W1", [25, 784], initializer = tf.contrib.layers.xavier_initializer())
+  b1 = tf.get_variable("b1", [25, 1], initializer = tf.zeros_initializer())
+  W2 = tf.get_variable("W2", [12, 25], initializer = tf.contrib.layers.xavier_initializer())
+  b2 = tf.get_variable("b2", [12, 1], initializer = tf.zeros_initializer())
+  W3 = tf.get_variable("W3", [10, 12], initializer = tf.contrib.layers.xavier_initializer())
+  b3 = tf.get_variable("b3", [10, 1], initializer = tf.zeros_initializer())
+  parameters = {"W1": W1,
+                "b1": b1,
+                "W2": W2,
+                "b2": b2,
+                "W3": W3,
+                "b3": b3}
+  return parameters
+
+tf.reset_default_graph()
+with tf.Session() as sess:
+    parameters = initializeParams()
+    print("W1 = " + str(parameters["W1"]))
+    print("b1 = " + str(parameters["b1"]))
+    print("W2 = " + str(parameters["W2"]))
+    print("b2 = " + str(parameters["b2"]))
+
+def convert_to_one_hot(Y_matrix, depth):
+  matrix = tf.one_hot(Y_matrix, depth)
+  with tf.Session() as sess:
+    return sess.run(matrix)
 
 def model(X_t, Y_t, X_d, Y_d, l_r, epochs, mbatch_size):
   ops.reset_default_graph()
   
+  total_mbatches = int(np.ceil(Y_t.shape[1] / mbatch_size))
   X = tf.placeholder(tf.float32, [n_x, None], name = "X")
-  Y = tf.placeholder(tf.float32, [n_y, None], name = "Y")
+  Y = tf.placeholder(tf.int32, [None], name = "Y")
+  params = initializeParams()
   
-  Y = tf.one_hot(indices = Y_t, depth = n_y, axis = 0)
+  Z3 = forwardProp(X, params)
   
-  m = X_t.shape[1]
-  #He / MRSA initialization
-  W1 = tf.get_variable("W1", [25, 784], initializer = tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32))
-  b1 = tf.get_variable("b1", [25, 1], initializer = tf.zeros_initializer())
-  W2 = tf.get_variable("W2", [12, 25], initializer = tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32))
-  b2 = tf.get_variable("b2", [12, 1], initializer = tf.zeros_initializer())
-  W3 = tf.get_variable("W3", [6, 12], initializer = tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32))
-  b3 = tf.get_variable("b3", [6, 1], initializer = tf.zeros_initializer())
-  
-  Z3 = forwardProp(W1,W2,W3,b1,b2,b3,X)
-  
-  cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits = tf.transpose(Z3), labels = tf.transpose(Y)))
+  cost = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits = tf.transpose(Z3), labels = tf.transpose(Y)))
   
   optimizer = tf.train.AdamOptimizer(learning_rate = l_r).minimize(cost)
   
@@ -73,13 +99,16 @@ def model(X_t, Y_t, X_d, Y_d, l_r, epochs, mbatch_size):
   
   with tf.Session() as sess:
     sess.run(init)
-    sess.run(Y)
-    
     for epoch in range(epochs):
-      epoch_cost = 0
-      #num_minibatches = int(m/mbatch_size)
-      
-      epoch_cost = sess.run([optimizer, cost], feed_dict={X: X_t, Y: Y_t})
+      epoch_cost = 0.
+      for i in range(total_mbatches):
+        mbatch_X = X_t[:, i*mbatch_size: (i+1)*mbatch_size]
+        mbatch_Y = Y_t[:, i*mbatch_size: (i+1)*mbatch_size].reshape(mbatch_size)
+        _, mb_cost = sess.run([optimizer, cost], feed_dict={X: mbatch_X, Y: mbatch_Y})
+        epoch_cost += mb_cost / total_mbatches
+      if epoch % 25 == 0:
+        print(epoch_cost)
+    print(tf.equal(tf.argmax(Z3), tf.argmax(Y)))
 
-model(training_img, training_labels, dev_img, dev_labels, .001, 250, 100)
+model(training_img, training_labels, dev_img, dev_labels, 0.0001, 100, 100)
 
